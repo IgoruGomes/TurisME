@@ -11,7 +11,7 @@ serve(async (req) => {
       );
     }
 
-    const apiKey = Deno.env.get("GOOGLE_MAPS_API_KEY");
+    const GOOGLE_API_KEY = Deno.env.get("GOOGLE_PLACES_API_KEY");
 
     if (!apiKey) {
       return new Response(
@@ -47,4 +47,5 @@ serve(async (req) => {
       { status: 500 }
     );
   }
+
 });
