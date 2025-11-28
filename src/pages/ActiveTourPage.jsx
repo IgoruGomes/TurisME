@@ -95,30 +95,38 @@ const ActiveTourPage = () => {
     }, [activeTour, navigate]);
     
     const handleConfirmNavigation = (place) => {
-        setIsNavigating(true);
-        if (!navigator.geolocation) {
-            toast({ variant: 'destructive', title: 'Geolocalização não suportada' });
-            setIsNavigating(false);
-            return;
-        }
+    setIsNavigating(true);
+    if (!navigator.geolocation) {
+        toast({ variant: 'destructive', title: 'Geolocalização não suportada' });
+        setIsNavigating(false);
+        return;
+    }
 
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const destinationAddress = place.formatted_address || place.vicinity;
-                const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destinationAddress)}&travelmode=driving`;
-                
-                window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
-                setPlaceToNavigate(null);
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const lat = place.geometry?.location?.lat;
+            const lng = place.geometry?.location?.lng;
+
+            if (!lat || !lng) {
+                toast({ variant: 'destructive', title: 'Destino inválido' });
                 setIsNavigating(false);
-            },
-            (error) => {
-                console.error("Geolocation error:", error);
-                toast({ variant: 'destructive', title: 'Erro ao obter localização' });
-                setIsNavigating(false);
-            },
-            { enableHighAccuracy: true }
-        );
-    };
+                return;
+            }
+
+            const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
+
+            window.open(googleMapsUrl, '_blank', 'noopener,noreferrer');
+            setPlaceToNavigate(null);
+            setIsNavigating(false);
+        },
+        (error) => {
+            console.error("Geolocation error:", error);
+            toast({ variant: 'destructive', title: 'Erro ao obter localização' });
+            setIsNavigating(false);
+        },
+        { enableHighAccuracy: true }
+    );
+};
 
     const handleConfirmCompletion = () => {
         if(placeToComplete){
