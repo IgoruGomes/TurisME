@@ -27,8 +27,9 @@ const HomePage = () => {
   // Retorna a URL da foto diretamente do Google Places API
   const getPhotoUrl = (photo_reference) => {
     if (!photo_reference) return FALLBACK_IMAGE;
-    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photo_reference}&key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}`;
-  };
+
+  return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photo_reference}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`;
+};
 
   // Função para buscar locais via Supabase Function
   const fetchPlaces = useCallback(async (query, lat, lon) => {
