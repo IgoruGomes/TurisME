@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin } from 'lucide-react';
@@ -16,43 +15,50 @@ const LocationCard = ({ location, onClick }) => {
 
   useEffect(() => {
     let isMounted = true;
+
     const fetchImage = async () => {
-      if (location.image_photo_reference) {
-        setLoading(true);
-        try {
-          const { data, error } = await supabase.functions.invoke('fetch-place-photo', {
-            body: { photo_reference: location.image_photo_reference }
-          });
-          if (error) throw error;
-          if (data instanceof Blob && isMounted) {
-            const url = URL.createObjectURL(data);
-            imageRef.current = url; // Store in ref
-            setImageUrl(url);
+      if (!location.image_photo_reference) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const { data, error } = await supabase.functions.invoke(
+          'fetch-place-photo',
+          {
+            body: { photo_reference: location.image_photo_reference },
+            responseType: 'arrayBuffer'
           }
-        } catch (err) {
-          console.error('Error fetching image for card:', err);
-          if(isMounted) {
-            setImageUrl('https://via.placeholder.com/400x224?text=Imagem+Indisponível');
-          }
-        } finally {
-          if(isMounted) {
-            setLoading(false);
-          }
+        );
+
+        if (error) throw error;
+
+        if (data && isMounted) {
+          const blob = new Blob([data], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+          imageRef.current = url;
+          setImageUrl(url);
         }
-      } else {
-         if(isMounted) {
-            setLoading(false);
-         }
+
+      } catch (err) {
+        console.error("Error fetching image for card:", err);
+        if (isMounted) {
+          setImageUrl("https://via.placeholder.com/400x224?text=Imagem+Indisponível");
+        }
+
+      } finally {
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchImage();
-    
+
     return () => {
       isMounted = false;
       if (imageRef.current) {
         URL.revokeObjectURL(imageRef.current);
-        imageRef.current = null;
       }
     };
   }, [location.image_photo_reference]);
@@ -65,7 +71,7 @@ const LocationCard = ({ location, onClick }) => {
     >
       <div className="relative h-40 sm:h-56 overflow-hidden">
         {loading ? (
-           <div className="w-full h-full bg-gray-200 animate-pulse" />
+          <div className="w-full h-full bg-gray-200 animate-pulse" />
         ) : imageUrl ? (
           <img
             src={imageUrl}
@@ -77,12 +83,16 @@ const LocationCard = ({ location, onClick }) => {
             <MapPin className="w-12 h-12 text-gray-400" />
           </div>
         )}
+
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+
         <div className="absolute bottom-0 left-0 right-0 p-2 sm:p-4">
-          <h3 className="text-white font-bold text-base sm:text-xl drop-shadow-md line-clamp-2">{location.name}</h3>
+          <h3 className="text-white font-bold text-base sm:text-xl drop-shadow-md line-clamp-2">
+            {location.name}
+          </h3>
         </div>
       </div>
-      
+
       <div className="p-2 sm:p-4 flex-grow flex flex-col">
         {location.description && (
           <div className="flex items-start gap-2 text-gray-500 text-xs sm:text-sm mt-auto">
