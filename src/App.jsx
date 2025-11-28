@@ -20,7 +20,7 @@ function App() {
   return (
     <AuthProvider>
       <TourProvider>
-        <Router>
+        <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/" element={<SplashScreen />} />
             <Route path="/login" element={<LoginPage />} />

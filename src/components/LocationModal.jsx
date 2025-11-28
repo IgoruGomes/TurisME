@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/lib/customSupabaseClient';
 import { X, MapPin, Phone, Clock, Star, DollarSign, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -7,41 +7,54 @@ import { X, MapPin, Phone, Clock, Star, DollarSign, ChevronLeft, ChevronRight } 
 const PhotoCarousel = ({ photos }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [imageUrls, setImageUrls] = useState({});
-  
+  const urlRefs = useRef({});
+
   useEffect(() => {
+    let isMounted = true;
     const fetchImages = async () => {
         if (!photos || photos.length === 0) return;
 
-        const urls = {};
-        for (let i = 0; i < photos.length; i++) {
-            const photo = photos[i];
-            if (!imageUrls[photo.photo_reference]) {
-                try {
-                    const { data, error } = await supabase.functions.invoke('fetch-place-photo', {
-                        body: { photo_reference: photo.photo_reference, maxwidth: 800 }
-                    });
-                    if (error) throw error;
-                    if (data instanceof Blob) {
-                        urls[photo.photo_reference] = URL.createObjectURL(data);
-                    }
-                } catch (err) {
-                    console.error(`Error fetching photo ${photo.photo_reference}:`, err);
-                    urls[photo.photo_reference] = 'https://via.placeholder.com/800x400?text=Imagem+Indisponível';
+        const urlsToFetch = photos.filter(p => !imageUrls[p.photo_reference] && !urlRefs.current[p.photo_reference]);
+        if (urlsToFetch.length === 0) return;
+
+        const newUrls = {};
+        await Promise.all(urlsToFetch.map(async (photo) => {
+            try {
+                const { data, error } = await supabase.functions.invoke('fetch-place-photo', {
+                    body: { photo_reference: photo.photo_reference, maxwidth: 800 }
+                });
+                if (error) throw error;
+                if (data instanceof Blob && isMounted) {
+                    const url = URL.createObjectURL(data);
+                    newUrls[photo.photo_reference] = url;
+                    urlRefs.current[photo.photo_reference] = url;
                 }
+            } catch (err) {
+                console.error(`Error fetching photo ${photo.photo_reference}:`, err);
+                 if (isMounted) {
+                    newUrls[photo.photo_reference] = 'https://via.placeholder.com/800x400?text=Imagem+Indisponível';
+                 }
             }
+        }));
+
+        if (isMounted && Object.keys(newUrls).length > 0) {
+            setImageUrls(prev => ({ ...prev, ...newUrls }));
         }
-        setImageUrls(prev => ({ ...prev, ...urls }));
     };
 
     fetchImages();
 
     return () => {
-        Object.values(imageUrls).forEach(url => {
-            if (url.startsWith('blob:')) {
+        isMounted = false;
+        // When component unmounts, revoke all created URLs
+        Object.values(urlRefs.current).forEach(url => {
+            if (url && url.startsWith('blob:')) {
                 URL.revokeObjectURL(url);
             }
         });
+        urlRefs.current = {};
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [photos]);
 
 

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -12,8 +12,10 @@ const cardVariants = {
 const LocationCard = ({ location, onClick }) => {
   const [imageUrl, setImageUrl] = useState(null);
   const [loading, setLoading] = useState(true);
+  const imageRef = useRef(null);
 
   useEffect(() => {
+    let isMounted = true;
     const fetchImage = async () => {
       if (location.image_photo_reference) {
         setLoading(true);
@@ -22,29 +24,38 @@ const LocationCard = ({ location, onClick }) => {
             body: { photo_reference: location.image_photo_reference }
           });
           if (error) throw error;
-          if (data instanceof Blob) {
-            setImageUrl(URL.createObjectURL(data));
+          if (data instanceof Blob && isMounted) {
+            const url = URL.createObjectURL(data);
+            imageRef.current = url; // Store in ref
+            setImageUrl(url);
           }
         } catch (err) {
           console.error('Error fetching image for card:', err);
-          setImageUrl('https://via.placeholder.com/400x224?text=Imagem+Indisponível');
+          if(isMounted) {
+            setImageUrl('https://via.placeholder.com/400x224?text=Imagem+Indisponível');
+          }
         } finally {
-          setLoading(false);
+          if(isMounted) {
+            setLoading(false);
+          }
         }
       } else {
-        setLoading(false);
+         if(isMounted) {
+            setLoading(false);
+         }
       }
     };
 
     fetchImage();
     
-    // Cleanup URL object when component unmounts
     return () => {
-      if (imageUrl && imageUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(imageUrl);
+      isMounted = false;
+      if (imageRef.current) {
+        URL.revokeObjectURL(imageRef.current);
+        imageRef.current = null;
       }
     };
-  }, [location.image_photo_reference, imageUrl]);
+  }, [location.image_photo_reference]);
 
   return (
     <motion.div

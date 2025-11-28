@@ -1,144 +1,110 @@
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
-import { useToast } from '@/components/ui/use-toast';
 
-const AuthContext = createContext(undefined);
+const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const { toast } = useToast();
+    const [user, setUser] = useState(null);
+    const [profile, setProfile] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-  const [user, setUser] = useState(null);
-  const [profile, setProfile] = useState(null);
-  const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(true);
+    const getProfile = useCallback(async (user) => {
+        if (!user) return null;
 
-  const fetchProfile = useCallback(async (userId) => {
-    if (!userId) {
-      setProfile(null);
-      return;
-    }
-    try {
-      const { data, error, status } = await supabase
-        .from('user_profiles')
-        .select(`*`)
-        .eq('id', userId)
-        .single();
-  
-      if (error && status !== 406) {
-        console.error("Error fetching profile", error);
-        throw error;
-      }
-  
-      if (data) {
-        setProfile(data);
-      }
-    } catch (error) {
-       // Do not toast here as it can fire on initial load when profile is not yet created
-    }
-  }, []);
+        try {
+            const { data, error } = await supabase
+                .from('user_profiles')
+                .select('*')
+                .eq('id', user.id)
+                .maybeSingle(); // Use maybeSingle() to prevent error on 0 rows
 
+            if (error) {
+                console.error('Error getting profile:', error);
+                return null;
+            }
+            
+            if (data) {
+                return data;
+            } else {
+                // Profile doesn't exist, create it
+                console.log("Profile not found for user, creating one...");
+                const { data: newProfile, error: insertError } = await supabase
+                    .from('user_profiles')
+                    .insert({ 
+                        id: user.id, 
+                        email: user.email,
+                        full_name: user.user_metadata?.full_name || user.email.split('@')[0],
+                        avatar_url: user.user_metadata?.avatar_url
+                    })
+                    .select()
+                    .single();
+                
+                if (insertError) {
+                    console.error('Error creating profile:', insertError);
+                    return null;
+                }
+                
+                console.log("Profile created:", newProfile);
+                return newProfile;
+            }
 
-  const handleSession = useCallback(async (session) => {
-    setSession(session);
-    const currentUser = session?.user ?? null;
-    setUser(currentUser);
-    if(currentUser) {
-      await fetchProfile(currentUser.id);
-    } else {
-      setProfile(null);
-    }
-    setLoading(false);
-  }, [fetchProfile]);
+        } catch (e) {
+            console.error('Exception when fetching/creating profile', e);
+            return null;
+        }
+    }, []);
 
-  useEffect(() => {
-    const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      await handleSession(session);
+    useEffect(() => {
+        const fetchSession = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session?.user) {
+                    setUser(session.user);
+                    const userProfile = await getProfile(session.user);
+                    setProfile(userProfile);
+                }
+            } catch (error) {
+                console.error("Error fetching session:", error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchSession();
+
+        const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            const currentUser = session?.user || null;
+            setUser(currentUser);
+            if (currentUser) {
+                const userProfile = await getProfile(currentUser);
+                setProfile(userProfile);
+            } else {
+                setProfile(null);
+            }
+            setLoading(false);
+        });
+
+        return () => {
+            authListener?.subscription.unsubscribe();
+        };
+    }, [getProfile]);
+
+    const value = {
+        user,
+        profile,
+        loading,
+        signIn: (options) => supabase.auth.signInWithOAuth(options),
+        signOut: () => supabase.auth.signOut(),
     };
 
-    getSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        await handleSession(session);
-      }
-    );
-
-    return () => subscription.unsubscribe();
-  }, [handleSession]);
-
-  const signUp = useCallback(async (email, password, options) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options,
-    });
-
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Sign up Failed",
-        description: error.message || "Something went wrong",
-      });
-    }
-
-    return { error };
-  }, [toast]);
-
-  const signIn = useCallback(async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Sign in Failed",
-        description: error.message || "Something went wrong",
-      });
-    }
-
-    return { error };
-  }, [toast]);
-
-  const signOut = useCallback(async () => {
-    const { error } = await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-    setSession(null);
-
-    if (error) {
-      toast({
-        variant: "destructive",
-        title: "Sign out Failed",
-        description: error.message || "Something went wrong",
-      });
-    }
-
-    return { error };
-  }, [toast]);
-
-  const value = useMemo(() => ({
-    user,
-    profile,
-    setProfile,
-    session,
-    loading,
-    signUp,
-    signIn,
-    signOut,
-  }), [user, profile, setProfile, session, loading, signUp, signIn, signOut]);
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+    const context = useContext(AuthContext);
+    if (context === undefined) {
+        throw new Error('useAuth must be used within an AuthProvider');
+    }
+    return context;
 };

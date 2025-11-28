@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { useTour } from '@/contexts/TourContext';
@@ -21,8 +21,9 @@ import {
 
 const TourLocationCard = ({ place, onNavigate, onComplete }) => {
     const [imageUrl, setImageUrl] = useState(null);
+    const imageRef = useRef(null);
 
-    React.useEffect(() => {
+    useEffect(() => {
         let isMounted = true;
         if (place.photos && place.photos[0]) {
             const fetchImage = async () => {
@@ -33,6 +34,7 @@ const TourLocationCard = ({ place, onNavigate, onComplete }) => {
                     if (error) throw error;
                     if (data instanceof Blob && isMounted) {
                         const url = URL.createObjectURL(data);
+                        imageRef.current = url;
                         setImageUrl(url);
                     }
                 } catch (err) { console.error(err); }
@@ -40,12 +42,12 @@ const TourLocationCard = ({ place, onNavigate, onComplete }) => {
             fetchImage();
             return () => {
                 isMounted = false;
-                if (imageUrl && imageUrl.startsWith('blob:')) {
-                    URL.revokeObjectURL(imageUrl);
+                if (imageRef.current) {
+                    URL.revokeObjectURL(imageRef.current);
+                    imageRef.current = null;
                 }
             };
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [place.photos]);
 
     return (
