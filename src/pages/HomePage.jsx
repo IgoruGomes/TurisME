@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
@@ -10,6 +9,11 @@ import LocationModal from '@/components/LocationModal';
 import CalendarModal from '@/components/CalendarModal';
 import TurismeLogo from '@/components/TurismeLogo';
 import BottomNav from '@/components/BottomNav';
+
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+
+const FALLBACK_IMAGE = "/fallback.jpg"; 
+// coloque uma imagem na pasta public/ chamada fallback.jpg
 
 const HomePage = () => {
   const { toast } = useToast();
@@ -23,23 +27,33 @@ const HomePage = () => {
   const [headerTitle, setHeaderTitle] = useState('Recomendações para você');
   const initialFetchDone = useRef(false);
 
+  const buildPhotoUrl = (ref) => {
+    if (!ref) return FALLBACK_IMAGE;
+
+    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${GOOGLE_API_KEY}`;
+  };
+
   const fetchPlaces = useCallback(async (query, lat, lon) => {
     setLoading(true);
     setHeaderTitle(query ? `Resultados para "${query}"` : 'Recomendações para você');
+
     try {
       const { data, error } = await supabase.functions.invoke('fetch-places', {
-        body: { query: query, lat, lon },
+        body: { query, lat, lon },
       });
 
       if (error) throw error;
-      
-      const placesWithPhotos = (data.results || [])
-        .filter(p => p.photos && p.photos.length > 0)
-        .map(p => ({
-            ...p,
-            image_photo_reference: p.photos[0].photo_reference,
-        }));
-      setLocations(placesWithPhotos);
+
+      const formatted = (data.results || []).map(p => ({
+        id: p.place_id,
+        name: p.name,
+        description: p.formatted_address,
+        photo_reference: p.photos?.[0]?.photo_reference || null,
+        image_url: buildPhotoUrl(p.photos?.[0]?.photo_reference || null),
+        raw: p
+      }));
+
+      setLocations(formatted);
 
     } catch (error) {
       toast({
@@ -52,35 +66,37 @@ const HomePage = () => {
       setLoading(false);
     }
   }, [toast]);
-  
+
   useEffect(() => {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
-    
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
         setUserCoords({ lat: latitude, lon: longitude });
         fetchPlaces('', latitude, longitude);
       },
-      (error) => {
-        console.warn("Permissão de localização negada.", error);
+      () => {
         toast({
           title: "Localização não permitida",
           description: "Buscando locais populares em Londrina.",
         });
-        fetchPlaces('', null, null); // Londrina fallback from edge function
+        fetchPlaces('', null, null);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+
     fetchEvents();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, []);
 
   const fetchEvents = async () => {
     try {
-      const { data, error } = await supabase.from('events').select('*').order('event_date', { ascending: true });
-      if (error) throw error;
+      const { data } = await supabase
+        .from('events')
+        .select('*')
+        .order('event_date', { ascending: true });
+
       setEvents(data || []);
     } catch (error) {
       console.error('Error fetching events:', error);
@@ -91,13 +107,13 @@ const HomePage = () => {
     e.preventDefault();
     fetchPlaces(searchQuery, userCoords?.lat, userCoords?.lon);
   };
-  
+
   const handleSearchChange = (e) => {
-      const query = e.target.value;
-      setSearchQuery(query);
-      if (query === '') {
-          fetchPlaces('', userCoords?.lat, userCoords?.lon);
-      }
+    const query = e.target.value;
+    setSearchQuery(query);
+    if (query === '') {
+      fetchPlaces('', userCoords?.lat, userCoords?.lon);
+    }
   };
 
   return (
@@ -106,15 +122,15 @@ const HomePage = () => {
         <title>Explore Londrina - TurisME</title>
         <meta name="description" content="Descubra os melhores pontos turísticos de Londrina" />
       </Helmet>
-      
+
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50 pb-24">
+        
         <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-lg shadow-sm">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="flex items-center justify-between h-16 md:h-20 gap-2 sm:gap-4">
-              <div className="flex-shrink-0">
-                <TurismeLogo className="h-6 sm:h-7 w-auto text-gray-800" />
-              </div>
-              
+
+              <TurismeLogo className="h-6 sm:h-7 w-auto text-gray-800" />
+
               <form onSubmit={handleSearch} className="flex-grow min-w-0">
                 <div className="relative">
                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 pointer-events-none" />
@@ -127,16 +143,14 @@ const HomePage = () => {
                   />
                 </div>
               </form>
-              
-              <div className="flex-shrink-0">
-                <button
-                  onClick={() => setShowCalendar(true)}
-                  className="p-2 text-blue-600 hover:bg-blue-100/50 rounded-full transition"
-                  aria-label="Calendário de Eventos"
-                >
-                  <Calendar className="w-6 h-6" />
-                </button>
-              </div>
+
+              <button
+                onClick={() => setShowCalendar(true)}
+                className="p-2 text-blue-600 hover:bg-blue-100/50 rounded-full transition"
+              >
+                <Calendar className="w-6 h-6" />
+              </button>
+
             </div>
           </div>
         </header>
@@ -169,9 +183,7 @@ const HomePage = () => {
                 hidden: { opacity: 0 },
                 show: {
                   opacity: 1,
-                  transition: {
-                    staggerChildren: 0.1
-                  }
+                  transition: { staggerChildren: 0.1 }
                 }
               }}
               initial="hidden"
@@ -179,20 +191,20 @@ const HomePage = () => {
             >
               {locations.map((location) => (
                 <LocationCard
-                  key={location.place_id}
+                  key={location.id}
                   location={{
-                    id: location.place_id,
+                    id: location.id,
                     name: location.name,
-                    description: location.formatted_address,
-                    image_photo_reference: location.image_photo_reference
+                    description: location.description,
+                    image_url: location.image_url
                   }}
-                  onClick={() => setSelectedLocation(location)}
+                  onClick={() => setSelectedLocation(location.raw)}
                 />
               ))}
             </motion.div>
           )}
 
-          {locations.length === 0 && !loading && (
+          {!loading && locations.length === 0 && (
             <div className="text-center py-20">
               <p className="text-gray-600 text-lg">Nenhum local encontrado.</p>
             </div>
