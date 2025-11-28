@@ -2,17 +2,20 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { Search, Calendar } from 'lucide-react';
-import LocationCard from './LocationCard';
-import LocationModal from './LocationModal';
-import CalendarModal from './CalendarModal';
-import BottomNav from './BottomNav';
-import TurismeLogo from './TurismeLogo';
+import { supabase } from '@/lib/customSupabaseClient';
+import { useToast } from '@/components/ui/use-toast';
+import LocationCard from '@/components/LocationCard';
+import LocationModal from '@/components/LocationModal';
+import CalendarModal from '@/components/CalendarModal';
+import TurismeLogo from '@/components/TurismeLogo';
+import BottomNav from '@/components/BottomNav';
 
-const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const FALLBACK_IMAGE = "/fallback.jpg";
 
 const HomePage = () => {
+  const { toast } = useToast();
   const [locations, setLocations] = useState([]);
+  const [events, setEvents] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -21,55 +24,65 @@ const HomePage = () => {
   const [headerTitle, setHeaderTitle] = useState('Recomendações para você');
   const initialFetchDone = useRef(false);
 
-  // Monta a URL da imagem do Google Places
-  const buildPhotoUrl = (ref) => {
-    if (!ref) return FALLBACK_IMAGE;
-    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${GOOGLE_API_KEY}`;
+  // Função para buscar a URL da foto pelo endpoint do backend
+  const fetchPhotoUrl = async (photo_reference) => {
+    if (!photo_reference) return FALLBACK_IMAGE;
+
+    try {
+      const res = await fetch('/api/photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photo_reference, maxwidth: 800 }),
+      });
+      const data = await res.json();
+      return data.url || FALLBACK_IMAGE;
+    } catch (err) {
+      console.error('Erro ao buscar foto:', err);
+      return FALLBACK_IMAGE;
+    }
   };
 
-  // Função para buscar lugares via Google Places API
-  const fetchPlaces = useCallback(async (query = '', lat = null, lon = null) => {
+  // Função para buscar locais
+  const fetchPlaces = useCallback(async (query, lat, lon) => {
     setLoading(true);
     setHeaderTitle(query ? `Resultados para "${query}"` : 'Recomendações para você');
 
     try {
-      let url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?key=${GOOGLE_API_KEY}&radius=5000&type=restaurant`;
-
-      if (query) url += `&keyword=${encodeURIComponent(query)}`;
-      if (lat && lon) url += `&location=${lat},${lon}`;
-      else url += `&location=-23.317,-51.169`; // fallback Londrina
-
-      // 🚨 IMPORTANTE: JSON diretamente do Google Places API não funciona no frontend (CORS).
-      // Para testes locais ou deploy, você precisa usar **Supabase Function** ou backend proxy.
-      // Aqui vamos usar fetch do Supabase Function como você já tinha:
-      const response = await fetch('/api/fetch-places', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, lat, lon }),
+      const { data, error } = await supabase.functions.invoke('fetch-places', {
+        body: { query, lat, lon },
       });
 
-      const data = await response.json();
+      if (error) throw error;
 
-      const formatted = (data.results || []).map(p => ({
-        id: p.place_id,
-        name: p.name,
-        description: p.formatted_address,
-        photo_reference: p.photos?.[0]?.photo_reference || null,
-        image_url: buildPhotoUrl(p.photos?.[0]?.photo_reference || null),
-        raw: p
-      }));
+      // Para cada local, buscar a URL da foto
+      const formatted = await Promise.all(
+        (data.results || []).map(async (p) => {
+          const image_url = await fetchPhotoUrl(p.photos?.[0]?.photo_reference);
+          return {
+            id: p.place_id,
+            name: p.name,
+            description: p.formatted_address,
+            image_url,
+            raw: p,
+          };
+        })
+      );
 
       setLocations(formatted);
 
     } catch (error) {
-      console.error("Erro ao buscar locais:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao buscar locais",
+        description: "Não foi possível carregar os locais. Tente novamente.",
+      });
       setLocations([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
-  // Busca inicial
+  // Fetch inicial
   useEffect(() => {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
@@ -81,11 +94,29 @@ const HomePage = () => {
         fetchPlaces('', latitude, longitude);
       },
       () => {
+        toast({
+          title: "Localização não permitida",
+          description: "Buscando locais populares em Londrina.",
+        });
         fetchPlaces('', null, null);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+
+    fetchEvents();
   }, []);
+
+  const fetchEvents = async () => {
+    try {
+      const { data } = await supabase
+        .from('events')
+        .select('*')
+        .order('event_date', { ascending: true });
+      setEvents(data || []);
+    } catch (error) {
+      console.error('Erro ao buscar eventos:', error);
+    }
+  };
 
   const handleSearch = (e) => {
     e.preventDefault();
@@ -93,8 +124,11 @@ const HomePage = () => {
   };
 
   const handleSearchChange = (e) => {
-    setSearchQuery(e.target.value);
-    if (e.target.value === '') fetchPlaces('', userCoords?.lat, userCoords?.lon);
+    const query = e.target.value;
+    setSearchQuery(query);
+    if (query === '') {
+      fetchPlaces('', userCoords?.lat, userCoords?.lon);
+    }
   };
 
   return (
@@ -105,10 +139,10 @@ const HomePage = () => {
       </Helmet>
 
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-orange-50 pb-24">
-        
         <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-lg shadow-sm">
           <div className="max-w-6xl mx-auto px-4 sm:px-6">
             <div className="flex items-center justify-between h-16 md:h-20 gap-2 sm:gap-4">
+
               <TurismeLogo className="h-6 sm:h-7 w-auto text-gray-800" />
 
               <form onSubmit={handleSearch} className="flex-grow min-w-0">
@@ -130,6 +164,7 @@ const HomePage = () => {
               >
                 <Calendar className="w-6 h-6" />
               </button>
+
             </div>
           </div>
         </header>
@@ -172,8 +207,7 @@ const HomePage = () => {
                     id: location.id,
                     name: location.name,
                     description: location.description,
-                    image_url: location.image_url,
-                    image_photo_reference: location.photo_reference
+                    image_url: location.image_url
                   }}
                   onClick={() => setSelectedLocation(location.raw)}
                 />
@@ -200,7 +234,7 @@ const HomePage = () => {
 
         {showCalendar && (
           <CalendarModal
-            events={[]} // caso use Supabase events, substitua por seu estado
+            events={events}
             onClose={() => setShowCalendar(false)}
           />
         )}
