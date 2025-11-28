@@ -24,31 +24,10 @@ const HomePage = () => {
   const [headerTitle, setHeaderTitle] = useState('Recomendações para você');
   const initialFetchDone = useRef(false);
 
-  // Função para buscar a URL da foto via backend
-  const fetchPhotoUrl = async (photo_reference) => {
+  // Retorna a URL da foto diretamente do Google Places API
+  const getPhotoUrl = (photo_reference) => {
     if (!photo_reference) return FALLBACK_IMAGE;
-
-    try {
-      const res = await fetch('/api/photo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ photo_reference, maxwidth: 800 }),
-      });
-
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        console.log("Foto carregada com sucesso:", url);
-        return url;
-      } else {
-        const errorData = await res.json();
-        console.error("Erro ao buscar foto:", errorData);
-        return FALLBACK_IMAGE;
-      }
-    } catch (err) {
-      console.error("Erro ao buscar foto:", err);
-      return FALLBACK_IMAGE;
-    }
+    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photo_reference}&key=${process.env.REACT_APP_GOOGLE_MAPS_API_KEY}`;
   };
 
   // Função para buscar locais via Supabase Function
@@ -67,19 +46,16 @@ const HomePage = () => {
 
       console.log("Dados recebidos do backend:", data);
 
-      const formatted = await Promise.all(
-        (data.results || []).map(async (p) => {
-          console.log("photo_reference do local:", p.photos?.[0]?.photo_reference);
-          const image_url = await fetchPhotoUrl(p.photos?.[0]?.photo_reference);
-          return {
-            id: p.place_id,
-            name: p.name,
-            description: p.formatted_address,
-            image_url,
-            raw: p,
-          };
-        })
-      );
+      const formatted = (data.results || []).map((p) => {
+        console.log("photo_reference do local:", p.photos?.[0]?.photo_reference);
+        return {
+          id: p.place_id,
+          name: p.name,
+          description: p.formatted_address,
+          image_url: getPhotoUrl(p.photos?.[0]?.photo_reference),
+          raw: p,
+        };
+      });
 
       setLocations(formatted);
     } catch (err) {
