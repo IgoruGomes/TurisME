@@ -12,7 +12,7 @@ import BottomNav from '@/components/BottomNav';
 
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-const FALLBACK_IMAGE = "/fallback.jpg"; 
+const FALLBACK_IMAGE = "/fallback.jpg";
 
 const HomePage = () => {
   const { toast } = useToast();
@@ -47,7 +47,7 @@ const HomePage = () => {
         id: p.place_id,
         name: p.name,
         description: p.formatted_address,
-        photo_reference: p.photos?.[0]?.photo_reference || null,   // <-- AQUI!
+        photo_reference: p.photos?.[0]?.photo_reference || null,  // <-- mantém a referência
         image_url: buildPhotoUrl(p.photos?.[0]?.photo_reference || null),
         raw: p
       }));
@@ -196,7 +196,7 @@ const HomePage = () => {
                     name: location.name,
                     description: location.description,
                     image_url: location.image_url,
-                    image_photo_reference: location.photo_reference   // <-- CORREÇÃO AQUI!
+                    image_photo_reference: location.photo_reference  // <-- CORRIGIDO AQUI
                   }}
                   onClick={() => setSelectedLocation(location.raw)}
                 />
